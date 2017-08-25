@@ -1,9 +1,11 @@
 package net.ossrs.yasea.demo;
 
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.PixelFormat;
+import android.media.AudioManager;
 import android.os.IBinder;
 import android.support.annotation.Nullable;
 import android.util.Log;
@@ -16,6 +18,8 @@ import android.widget.Button;
 import android.widget.Toast;
 
 import com.github.faucamp.simplertmp.RtmpHandler;
+import com.pili.pldroid.player.AVOptions;
+import com.pili.pldroid.player.PLMediaPlayer;
 
 import net.ossrs.yasea.SrsCameraView;
 import net.ossrs.yasea.SrsEncodeHandler;
@@ -39,16 +43,20 @@ public class BackgroudService extends Service implements RtmpHandler.RtmpListene
     private SrsCameraView bgSurfaceView;
     private SrsPublisher mPublisher;
     private String rtmpUrl;
-    private IjkMediaPlayer player;
+    //private IjkMediaPlayer player;
+
+    private PLMediaPlayer mMediaPlayer;
+    private String mAudioPath;
+    private AVOptions mAVOptions;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        player = new IjkMediaPlayer();
+        /*player = new IjkMediaPlayer();
 
-        player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 4096);
-        player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 50000);
-        player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0);
+        player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 2048);
+        player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 1000);      //播放前的探测时间
+        player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0);        //  关闭播放器缓冲
         player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "fflags", "nobuffer");
         player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "max_delay", "0");
         player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reorder_queue_size", "0");
@@ -57,7 +65,19 @@ public class BackgroudService extends Service implements RtmpHandler.RtmpListene
         player.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_frame", 0);
         player.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter", 0);
         player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1);
-        player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "sync", "ext");
+        player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "sync", "ext");*/
+        mAVOptions = new AVOptions();
+        // the unit of timeout is ms
+        mAVOptions.setInteger(AVOptions.KEY_PREPARE_TIMEOUT, 10 * 1000);
+        // 默认的缓存大小，单位是 ms
+        mAVOptions.setInteger(AVOptions.KEY_CACHE_BUFFER_DURATION, 300);
+        // 最大的缓存大小，单位是 ms
+        mAVOptions.setInteger(AVOptions.KEY_MAX_CACHE_BUFFER_DURATION, 300);
+
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+
+        prepare();
         Log.i(TAG, "onCreate..");
     }
 
@@ -69,12 +89,12 @@ public class BackgroudService extends Service implements RtmpHandler.RtmpListene
         Log.i(TAG, "onStart..");
 
 
-            mWindowManager = (WindowManager) getSystemService(Service.WINDOW_SERVICE);
-                bgSurfaceView = new SrsCameraView(this);
-                WindowManager.LayoutParams layoutParams = new WindowManager.LayoutParams(
-                        1, 1, WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
-                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-                        PixelFormat.TRANSLUCENT);
+        mWindowManager = (WindowManager) getSystemService(Service.WINDOW_SERVICE);
+        bgSurfaceView = new SrsCameraView(this);
+        WindowManager.LayoutParams layoutParams = new WindowManager.LayoutParams(
+                1, 1, WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                PixelFormat.TRANSLUCENT);
                 layoutParams.gravity = Gravity.LEFT | Gravity.TOP;
                 mWindowManager.addView(bgSurfaceView, layoutParams);
 
@@ -89,18 +109,41 @@ public class BackgroudService extends Service implements RtmpHandler.RtmpListene
         mPublisher.setVideoSmoothMode();
         mPublisher.startCamera();
 
-        rtmpUrl = "rtmp://118.178.122.224:1935/live/livestream/live";
+        rtmpUrl = "rtmp://118.178.122.224:1935/live/livestream";
         mPublisher.startPublish(rtmpUrl);
         mPublisher.startCamera();
 
-        try {
-            player.setDataSource("rtmp://118.178.122.224:1935/live/livestream");
+        /*try {
+            player.setDataSource("rtmp://118.178.122.224:1935/live/livestream/vczz");
         } catch (IOException e) {
             e.printStackTrace();
         }
         player.prepareAsync();
-        player.start();
+        player.start();*/
 
+    }
+
+    /**
+     * PLDroidPlayer
+     */
+    private void prepare() {
+        if (mMediaPlayer == null) {
+            mMediaPlayer = new PLMediaPlayer(getApplicationContext(), mAVOptions);
+            mMediaPlayer.setDebugLoggingEnabled(true);
+        }
+        try {
+            mAudioPath = "rtmp://118.178.122.224:1935/live/livestream/vczz";
+            mMediaPlayer.setDataSource(mAudioPath);
+            mMediaPlayer.setOnPreparedListener(new PLMediaPlayer.OnPreparedListener() {
+                @Override
+                public void onPrepared(PLMediaPlayer plMediaPlayer, int i) {
+                    mMediaPlayer.start();
+                }
+            });
+            mMediaPlayer.prepareAsync();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -123,6 +166,11 @@ public class BackgroudService extends Service implements RtmpHandler.RtmpListene
         Log.e(TAG, "onUnbind..");
         return super.onUnbind(intent);
     }
+
+
+    /**
+     * push stream overide methods
+     */
 
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
