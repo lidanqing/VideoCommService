@@ -6,7 +6,10 @@ import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.PixelFormat;
 import android.media.AudioManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.support.annotation.Nullable;
 import android.util.Log;
 import android.view.Gravity;
@@ -29,8 +32,6 @@ import net.ossrs.yasea.SrsRecordHandler;
 import java.io.IOException;
 import java.net.SocketException;
 import java.util.Random;
-
-import tv.danmaku.ijk.media.player.IjkMediaPlayer;
 
 /**
  * Created by li on 2017/8/24.
@@ -73,11 +74,12 @@ public class BackgroudService extends Service implements RtmpHandler.RtmpListene
         mAVOptions.setInteger(AVOptions.KEY_CACHE_BUFFER_DURATION, 300);
         // 最大的缓存大小，单位是 ms
         mAVOptions.setInteger(AVOptions.KEY_MAX_CACHE_BUFFER_DURATION, 300);
+        mAVOptions.setInteger(AVOptions.KEY_MEDIACODEC,AVOptions.MEDIA_CODEC_HW_DECODE);
 
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
 
-        prepare();
+
         Log.i(TAG, "onCreate..");
     }
 
@@ -107,11 +109,22 @@ public class BackgroudService extends Service implements RtmpHandler.RtmpListene
         mPublisher.setPreviewResolution(320, 240);
         mPublisher.setOutputResolution(240, 320);
         mPublisher.setVideoSmoothMode();
+        mPublisher.switchToSoftEncoder();    //
         mPublisher.startCamera();
 
-        rtmpUrl = "rtmp://118.178.122.224:1935/live/livestream";
+        /*rtmpUrl = "rtmp://118.178.122.224:1935/live/livestream";
         mPublisher.startPublish(rtmpUrl);
-        mPublisher.startCamera();
+        mPublisher.startCamera();*/
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                prepare();
+                rtmpUrl = "rtmp://118.178.122.224:1935/live/livestream";
+                mPublisher.startPublish(rtmpUrl);
+                mPublisher.startCamera();
+            }
+        }).start();
 
         /*try {
             player.setDataSource("rtmp://118.178.122.224:1935/live/livestream/vczz");
@@ -130,9 +143,10 @@ public class BackgroudService extends Service implements RtmpHandler.RtmpListene
         if (mMediaPlayer == null) {
             mMediaPlayer = new PLMediaPlayer(getApplicationContext(), mAVOptions);
             mMediaPlayer.setDebugLoggingEnabled(true);
+            mMediaPlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
         }
         try {
-            mAudioPath = "rtmp://118.178.122.224:1935/live/livestream/vczz";
+            mAudioPath = "rtmp://118.178.122.224:1935/live/livestream/li";
             mMediaPlayer.setDataSource(mAudioPath);
             mMediaPlayer.setOnPreparedListener(new PLMediaPlayer.OnPreparedListener() {
                 @Override
@@ -149,10 +163,14 @@ public class BackgroudService extends Service implements RtmpHandler.RtmpListene
     @Override
     public void onDestroy() {
         // TODO Auto-generated method stub
-        Log.i(TAG, "Service stopped..");
+
         super.onDestroy();
         mPublisher.stopPublish();
         mPublisher.stopRecord();
+        release();
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        audioManager.abandonAudioFocus(null);
+        Log.e(TAG, "Service stopped..");
     }
 
     @Override
@@ -271,7 +289,39 @@ public class BackgroudService extends Service implements RtmpHandler.RtmpListene
 
     @Override
     public void onRtmpSocketException(SocketException e) {
-        handleException(e);
+        if (isNetworkAvailable())
+        {
+            Toast.makeText(getApplicationContext(), "当前有可用网络！", Toast.LENGTH_LONG).show();
+            /*mPublisher = new SrsPublisher(bgSurfaceView);
+            mPublisher.setEncodeHandler(new SrsEncodeHandler(this));        //编码状态回调
+            mPublisher.setRtmpHandler(new RtmpHandler(this));               //rtmp推流状态回调
+            mPublisher.setRecordHandler(new SrsRecordHandler(this));
+            mPublisher.setPreviewResolution(320, 240);
+            mPublisher.setOutputResolution(240, 320);
+            mPublisher.setVideoSmoothMode();
+            mPublisher.startCamera();*/
+            handleException(e);
+            mPublisher.setEncodeHandler(new SrsEncodeHandler(this));
+            mPublisher.setRtmpHandler(new RtmpHandler(this));
+            mPublisher.setRecordHandler(new SrsRecordHandler(this));
+            //mPublisher.setPreviewResolution(640, 360);
+            //mPublisher.setOutputResolution(360, 640);
+            mPublisher.setPreviewResolution(320, 240);
+            mPublisher.setOutputResolution(240, 320);
+            mPublisher.setVideoSmoothMode();
+            mPublisher.switchToSoftEncoder();    //
+            mPublisher.startCamera();
+            rtmpUrl = "rtmp://118.178.122.224:1935/live/livestream";
+            //rtmpUrl = "rtmp://ossrs.net/live/vczz";
+            mPublisher.startPublish(rtmpUrl);
+            mPublisher.startCamera();
+            Log.e(TAG,"youwang............................");
+        }
+        else
+        {
+            handleException(e);
+            Toast.makeText(getApplicationContext(), "当前没有可用网络！", Toast.LENGTH_LONG).show();
+        }
     }
 
     @Override
@@ -336,5 +386,49 @@ public class BackgroudService extends Service implements RtmpHandler.RtmpListene
     @Override
     public void onEncodeIllegalArgumentException(IllegalArgumentException e) {
         handleException(e);
+    }
+
+    /**
+     * 检查当前网络是否可用
+     *
+     */
+    public boolean isNetworkAvailable()
+    {
+        Context context = getApplicationContext();
+        // 获取手机所有连接管理对象（包括对wi-fi,net等连接的管理）
+        ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        if (connectivityManager == null)
+        {
+            return false;
+        }
+        else
+        {
+            // 获取NetworkInfo对象
+            NetworkInfo[] networkInfo = connectivityManager.getAllNetworkInfo();
+
+            if (networkInfo != null && networkInfo.length > 0)
+            {
+                for (int i = 0; i < networkInfo.length; i++)
+                {
+                    Log.e(TAG,i + "===状态===" + networkInfo[i].getState());
+                    Log.e(TAG,i + "===类型===" + networkInfo[i].getTypeName());
+                    // 判断当前网络状态是否为连接状态
+                    if (networkInfo[i].getState() == NetworkInfo.State.CONNECTED)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    public void release() {
+        if (mMediaPlayer != null) {
+            mMediaPlayer.stop();
+            mMediaPlayer.release();
+            mMediaPlayer = null;
+        }
     }
 }

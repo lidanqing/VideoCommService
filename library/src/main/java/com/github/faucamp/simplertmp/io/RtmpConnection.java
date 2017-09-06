@@ -128,7 +128,7 @@ public class RtmpConnection implements RtmpPublisher {
         socket = new Socket();
         SocketAddress socketAddress = new InetSocketAddress(host, port);
         try {
-            socket.connect(socketAddress, 3000);
+            socket.connect(socketAddress, 6000);
             inputStream = new BufferedInputStream(socket.getInputStream());
             outputStream = new BufferedOutputStream(socket.getOutputStream());
             Log.d(TAG, "connect(): socket connection established, doing handhake...");

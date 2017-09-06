@@ -195,6 +195,7 @@ public class MainActivity extends Activity implements RtmpHandler.RtmpListener,
         super.onDestroy();
         //mPublisher.stopPublish();
         //mPublisher.stopRecord();
+        stopService(new Intent(MainActivity.this,BackgroudService.class));
     }
 
     @Override
